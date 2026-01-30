@@ -51,6 +51,9 @@ dependencies = [
     "google-api-python-client>=2.0.0",
     "google-auth-httplib2>=0.1.0",
     "google-auth-oauthlib>=1.0.0",
+    "python-dotenv>=1.0.0",
+    "google-generativeai>=0.8.0",
+    "pydantic>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -80,7 +83,13 @@ Changelog = "https://github.com/ai-twinkle/Eval/releases"
 twinkle-eval = "twinkle_eval.cli:main"
 
 [tool.setuptools]
-packages = ["twinkle_eval"]
+packages = [
+    "twinkle_eval",
+    "twinkle_eval.llm_as_judge",
+    "twinkle_eval.llm_as_judge.models",
+    "twinkle_eval.llm_as_judge.metrics",
+    "twinkle_eval.llm_as_judge.templates",
+]
 
 [tool.setuptools.package-data]
 twinkle_eval = ["*.yaml", "*.yml", "config.template.yaml"]

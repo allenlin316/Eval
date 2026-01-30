@@ -1,0 +1,198 @@
+# 整合配置範例：同時支援一般評測和 LLM-as-Judge 評測
+# 您可以在同一個配置文件中同時配置兩種評測方式
+
+# ============================================================================
+# 一般評測配置（原有的 TMMLU+, MMLU 等題目評測）
+# 使用命令：twinkle-eval --config config.yaml
+# ============================================================================
+
+llm_api:
+  base_url: "https://litellm-dev.dgx-coolify.apmic.ai/"
+  api_key: "sk-KyfTAw80HPoTzJwcCsCqjg"
+  disable_ssl_verify: false
+  api_rate_limit: 0.2
+  max_retries: 3
+  timeout: 600
+
+model:
+  name: "gemma-3-12b-it"
+  temperature: 0.0
+  top_p: 0.9
+  max_tokens: 4096
+  frequency_penalty: 0.0
+  presence_penalty: 0.0
+  extra_body:
+
+evaluation:
+  dataset_paths:
+    - dataset
+  evaluation_method: "box"
+  system_prompt:
+    zh: |
+      使用者將提供一個題目，並附上選項 A、B、C、D
+      請仔細閱讀題目要求，根據題意選出最符合的選項，並將選項以以下格式輸出：
+      \box{選項}
+      請確保僅將選項包含在 { } 中，否則將不計算為有效答案。
+      務必精確遵循輸出格式，避免任何多餘內容或錯誤格式。
+    en: |
+      The user will provide a question along with options A, B, C, and D.
+      Please read the question carefully and select the option that best fits the requirements.
+      Output the selected option in the following format:
+      \box{Option}
+      Make sure to include only the option within the curly braces; otherwise, it will not be considered a valid answer.
+      Strictly follow the output format and avoid any extra content or incorrect formatting.
+  datasets_prompt_map:
+    "dataset": "zh"
+  repeat_runs: 5
+  shuffle_options: true
+
+environment:
+  gpu_info:
+    model: "NVIDIA GeForce RTX 4090"
+    count: 1
+    memory_gb: 24
+    cuda_version: "12.1"
+    driver_version: "535.104.05"
+  parallel_config:
+    tp_size: 1
+    pp_size: 1
+  system_info:
+    framework: "vLLM"
+    python_version: "3.10.12"
+    torch_version: "2.1.0"
+    node_count: 1
+
+logging:
+  level: "INFO"
+
+google_services:
+  google_drive:
+    enabled: false
+    auth_method: "service_account"
+    credentials_file: "service_account.json"
+    log_folder_id: ""
+
+  google_sheets:
+    enabled: false
+    auth_method: "service_account"
+    credentials_file: "service_account.json"
+    spreadsheet_id: ""
+    sheet_name: "Results"
+
+# ============================================================================
+# LLM-as-Judge 評測配置（新增功能）
+# 使用命令：twinkle-eval-judge --config config.yaml
+# ============================================================================
+
+llm_as_judge:
+  # Judge 模型配置
+  # 可以與上面的 llm_api 使用相同的端點，或使用不同的模型
+  judge_model:
+    type: "openai"
+
+    # 選項 1: 使用與一般評測相同的 API
+    model_name: "gemma-3-12b-it"                          # 或使用更強的模型如 "gpt-4"
+    api_key: "sk-KyfTAw80HPoTzJwcCsCqjg"                   # 與上面相同
+    base_url: "https://litellm-dev.dgx-coolify.apmic.ai/" # 與上面相同
+
+    # 選項 2: 使用不同的 API（例如 OpenAI）
+    # model_name: "gpt-4"
+    # api_key: "your-openai-api-key"
+    # base_url: "https://api.openai.com/v1"
+
+    # 其他配置
+    temperature: 0.0
+    max_tokens: 4096
+    timeout: 600
+    max_retries: 3
+    disable_ssl_verify: false
+    supports_structured_output: false
+    supports_json_mode: false
+
+  # 評估指標配置
+  metrics:
+    # 答案相關性評估
+    - type: "answer_relevancy"
+      enabled: true
+      threshold: 0.7
+
+    # 忠實度評估（適用於 RAG 系統）
+    - type: "faithfulness"
+      enabled: true
+      threshold: 0.8
+
+    # G-Eval 自定義評估 - 正確性
+    - type: "g_eval"
+      enabled: true
+      name: "Correctness"
+      criteria: |
+        評估實際輸出是否正確回答了輸入問題。
+        考慮以下方面：
+        1. 答案是否事實正確
+        2. 答案是否完整
+        3. 答案是否與預期輸出一致
+      evaluation_params:
+        - "input"
+        - "actual_output"
+        - "expected_output"
+      threshold: 0.7
+      strict_mode: false
+
+    # G-Eval 帶評分標準範例（可選）
+    - type: "g_eval"
+      enabled: false  # 預設不啟用，需要時設為 true
+      name: "Quality"
+      criteria: |
+        評估回答的整體品質：
+        1. 準確性
+        2. 完整性
+        3. 清晰度
+      evaluation_params:
+        - "input"
+        - "actual_output"
+      rubric:
+        - score_range: [0, 3]
+          description: "品質差 - 錯誤或不完整"
+        - score_range: [4, 6]
+          description: "尚可 - 基本正確但可改進"
+        - score_range: [7, 8]
+          description: "良好 - 正確且清晰"
+        - score_range: [9, 10]
+          description: "優秀 - 高品質回答"
+      threshold: 0.7
+
+  # 測試案例配置
+  test_cases:
+    # 選項 1: 從檔案載入
+    file: "test_cases.jsonl"
+
+    # 選項 2: 直接在配置中定義（會覆蓋 file 選項）
+    # cases:
+    #   - input: "What is the capital of France?"
+    #     actual_output: "Paris is the capital of France."
+    #     expected_output: "Paris"
+    #
+    #   - input: "What is 2 + 2?"
+    #     actual_output: "2 + 2 equals 4."
+    #     expected_output: "4"
+
+  # 輸出配置
+  output:
+    directory: "results/llm_as_judge"  # 與一般評測結果分開存放
+    save_summary: true
+
+# ============================================================================
+# 使用說明
+# ============================================================================
+#
+# 1. 執行一般評測（TMMLU+, MMLU 等）：
+#    twinkle-eval --config config.yaml
+#
+# 2. 執行 LLM-as-Judge 評測：
+#    twinkle-eval-judge --config config.yaml
+#
+# 3. 兩種評測可以使用相同的 API 端點和金鑰，也可以分別配置
+#
+# 4. 結果會分別儲存在：
+#    - 一般評測：results/
+#    - LLM-as-Judge：results/llm_as_judge/

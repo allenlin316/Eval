@@ -1,0 +1,139 @@
+# LLM-as-Judge 評估配置範例
+# 此配置檔案示範如何使用 config.yaml 直接執行 LLM-as-Judge 評估，無需寫程式碼
+
+# LLM-as-Judge 配置區塊
+llm_as_judge:
+  # Judge 模型配置
+  judge_model:
+    type: "openai"                                    # 模型類型（目前支援 "openai"）
+    model_name: "gpt-4"                               # 使用的模型名稱
+    api_key: "your-api-key-here"                      # API 金鑰
+    base_url: "https://api.openai.com/v1"             # API 端點
+    temperature: 0.0                                   # 溫度參數（0.0 = 確定性）
+    max_tokens: 4096                                   # 最大輸出 token 數
+    timeout: 600                                       # 請求超時時間（秒）
+    max_retries: 3                                     # 失敗重試次數
+    disable_ssl_verify: false                          # 是否停用 SSL 驗證
+    supports_structured_output: false                  # 是否支援結構化輸出
+    supports_json_mode: true                           # 是否支援 JSON 模式
+
+  # 評估指標配置
+  metrics:
+    # 答案相關性評估
+    - type: "answer_relevancy"
+      enabled: true
+      threshold: 0.7                                   # 成功閾值（0-1）
+
+    # 忠實度評估（適用於 RAG 系統）
+    - type: "faithfulness"
+      enabled: true
+      threshold: 0.8
+
+    # G-Eval 自定義評估 - 正確性
+    - type: "g_eval"
+      enabled: true
+      name: "Correctness"
+      criteria: |
+        評估實際輸出是否正確回答了輸入問題。
+        考慮以下方面：
+        1. 答案是否事實正確
+        2. 答案是否完整
+        3. 答案是否與預期輸出一致
+      evaluation_params:
+        - "input"
+        - "actual_output"
+        - "expected_output"
+      threshold: 0.7
+      strict_mode: false                               # false = 0-10 評分，true = 0/1 評分
+
+    # G-Eval 自定義評估 - 程式碼品質（帶評分標準）
+    - type: "g_eval"
+      enabled: false                                   # 設為 false 則不執行此指標
+      name: "Code Quality"
+      criteria: |
+        評估程式碼的品質，包括：
+        1. 正確性：程式碼是否正確實現功能
+        2. 可讀性：程式碼是否清晰易懂
+        3. 效率：程式碼是否高效
+      evaluation_params:
+        - "input"
+        - "actual_output"
+      rubric:
+        - score_range: [0, 3]
+          description: "品質差 - 有錯誤或難以理解"
+        - score_range: [4, 6]
+          description: "尚可 - 基本正確但可改進"
+        - score_range: [7, 8]
+          description: "良好 - 正確且易讀"
+        - score_range: [9, 10]
+          description: "優秀 - 高品質且高效"
+      threshold: 0.7
+
+  # 測試案例配置
+  test_cases:
+    # 選項 1: 從檔案載入測試案例
+    file: "test_cases.jsonl"                           # JSONL 或 JSON 檔案
+
+    # 選項 2: 直接在配置中定義測試案例（會覆蓋 file 選項）
+    # cases:
+    #   - input: "What is the capital of France?"
+    #     actual_output: "Paris is the capital of France."
+    #     expected_output: "Paris"
+    #
+    #   - input: "What is 2 + 2?"
+    #     actual_output: "2 + 2 equals 4."
+    #     expected_output: "4"
+    #
+    #   - input: "Explain quantum computing"
+    #     actual_output: "Quantum computing uses quantum bits (qubits) that can exist in superposition."
+    #     expected_output: "A simple explanation of quantum computing"
+    #     retrieval_context:
+    #       - "Quantum computing is based on quantum mechanics."
+    #       - "Qubits can be in multiple states simultaneously."
+
+  # 輸出配置
+  output:
+    directory: "results"                               # 結果輸出目錄
+    save_summary: true                                 # 是否另外儲存摘要檔案
+
+# ============================================================================
+# 測試案例檔案格式範例（test_cases.jsonl）
+# ============================================================================
+# 每行一個 JSON 物件，格式如下：
+#
+# {"input": "What is Python?", "actual_output": "Python is a programming language.", "expected_output": "A programming language"}
+# {"input": "What is the speed of light?", "actual_output": "The speed of light is about 300,000 km/s.", "expected_output": "299,792,458 m/s"}
+# {"input": "Who wrote Hamlet?", "actual_output": "Hamlet was written by William Shakespeare.", "expected_output": "Shakespeare", "metadata": {"category": "literature"}}
+#
+# 或使用 JSON 格式（test_cases.json）：
+# [
+#   {
+#     "input": "What is Python?",
+#     "actual_output": "Python is a programming language.",
+#     "expected_output": "A programming language"
+#   },
+#   {
+#     "input": "What is machine learning?",
+#     "actual_output": "ML is a subset of AI that learns from data.",
+#     "expected_output": "A subset of AI",
+#     "retrieval_context": [
+#       "Machine learning is part of artificial intelligence.",
+#       "It allows systems to learn from data."
+#     ]
+#   }
+# ]
+
+# ============================================================================
+# 使用方式
+# ============================================================================
+# 1. 複製此檔案並重新命名（例如：my_evaluation.yaml）
+# 2. 修改配置：
+#    - 設定 judge_model 的 api_key 和其他參數
+#    - 根據需求啟用/停用評估指標
+#    - 準備測試案例檔案或直接在配置中定義
+# 3. 執行評估：
+#    twinkle-eval-judge --config my_evaluation.yaml
+#
+# 或使用 Python：
+#    from twinkle_eval.llm_as_judge import run_from_config
+#    results = run_from_config("my_evaluation.yaml")
