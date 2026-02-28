@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from .config_runner import run_from_config
+from .rag_runner import run_rag_evaluation
 
 
 def main():
@@ -21,8 +22,12 @@ Examples:
   # Run with custom config
   twinkle-eval-judge --config my_config.yaml
 
-  # Create example config file
+  # Run RAG evaluation (retrieval + generation + LLM-as-Judge)
+  twinkle-eval-judge --rag-config config_rag.yaml
+
+  # Create example config files
   twinkle-eval-judge --init
+  twinkle-eval-judge --init-rag
 
 For more information, see:
   https://github.com/ai-twinkle/Eval/blob/main/twinkle_eval/llm_as_judge/README.md
@@ -38,9 +43,21 @@ For more information, see:
     )
 
     parser.add_argument(
+        "--rag-config",
+        type=str,
+        help="Path to RAG evaluation config file (enables RAG evaluation mode)",
+    )
+
+    parser.add_argument(
         "--init",
         action="store_true",
         help="Create example configuration file (config_llm_as_judge.yaml)",
+    )
+
+    parser.add_argument(
+        "--init-rag",
+        action="store_true",
+        help="Create example RAG evaluation config file (config_rag.yaml)",
     )
 
     parser.add_argument(
@@ -56,7 +73,16 @@ For more information, see:
         create_example_config()
         return 0
 
-    # Run evaluation
+    # Handle --init-rag
+    if args.init_rag:
+        create_rag_config()
+        return 0
+
+    # Run RAG evaluation if --rag-config is specified
+    if args.rag_config:
+        return run_rag_evaluation_cli(args.rag_config)
+
+    # Run standard LLM-as-Judge evaluation
     try:
         print("Starting LLM-as-Judge evaluation...")
         print(f"Configuration: {args.config}\n")
@@ -85,6 +111,36 @@ For more information, see:
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         print("\nTip: Use --init to create an example configuration file", file=sys.stderr)
+        return 1
+
+    except ValueError as e:
+        print(f"Configuration Error: {e}", file=sys.stderr)
+        return 1
+
+    except KeyboardInterrupt:
+        print("\nEvaluation interrupted by user", file=sys.stderr)
+        return 130
+
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def run_rag_evaluation_cli(config_path: str) -> int:
+    """Run RAG evaluation from CLI."""
+    try:
+        print("Starting RAG Evaluation...")
+        print(f"Configuration: {config_path}\n")
+
+        results = run_rag_evaluation(config_path)
+
+        return 0
+
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        print("\nTip: Use --init-rag to create an example RAG configuration file", file=sys.stderr)
         return 1
 
     except ValueError as e:
@@ -231,6 +287,120 @@ llm_as_judge:
 
     with open(target, "w", encoding="utf-8") as f:
         f.write(content)
+
+
+def create_rag_config():
+    """Create example RAG evaluation configuration file."""
+    import os
+
+    target = "config_rag.yaml"
+
+    if os.path.exists(target):
+        response = input(f"{target} already exists. Overwrite? [y/N] ")
+        if response.lower() != 'y':
+            print("Cancelled.")
+            return
+
+    content = '''# RAG Evaluation Configuration
+# This config supports two evaluation stages:
+# 1. Retrieval Evaluation (Recall@k, nDCG@k, MRR) - No LLM needed
+# 2. Generation + LLM-as-Judge (Faithfulness, Answer Relevance, Accuracy)
+#
+# Usage: twinkle-eval-judge --rag-config config_rag.yaml
+
+rag_evaluation:
+  # ============================================================================
+  # Data Configuration
+  # ============================================================================
+  data:
+    # RAG data file (JSONL format with contexts, input, targets)
+    rag_file: "dataset/clapnq.jsonl"
+    
+    # Relevance judgments file (TSV: query-id, corpus-id, score)
+    qrels_file: "dataset/qrels/clapnq_qrels.tsv"
+
+  # ============================================================================
+  # Retrieval Metrics (No LLM Required)
+  # ============================================================================
+  retrieval_metrics:
+    enabled: true
+    k_values: [1, 3, 5, 10]
+
+  # ============================================================================
+  # Answer Generation (LLM Required)
+  # ============================================================================
+  generation:
+    enabled: true
+    top_k: 5
+    prompt_template: |
+      Based on the following retrieved documents, answer the question.
+      
+      Documents:
+      {context}
+      
+      Question: {question}
+      
+      Answer:
+
+  # ============================================================================
+  # Generator Model
+  # ============================================================================
+  generator:
+    llm_api:
+      base_url: "https://api.openai.com/v1"
+      api_key: "${OPENAI_API_KEY}"
+    model:
+      name: "gpt-4"
+      type: "openai"
+      temperature: 0.0
+      max_tokens: 1024
+
+  # ============================================================================
+  # Judge Model
+  # ============================================================================
+  judge:
+    llm_api:
+      base_url: "https://api.openai.com/v1"
+      api_key: "${OPENAI_API_KEY}"
+    model:
+      name: "gpt-4"
+      type: "openai"
+      temperature: 0.0
+      max_tokens: 4096
+      supports_json_mode: true
+
+  # ============================================================================
+  # LLM-as-Judge Metrics
+  # ============================================================================
+  llm_judge_metrics:
+    enabled: true
+    faithfulness:
+      enabled: true
+      threshold: 0.8
+    answer_relevancy:
+      enabled: true
+      threshold: 0.7
+    accuracy:
+      enabled: true
+      threshold: 0.7
+
+  # ============================================================================
+  # Output Configuration
+  # ============================================================================
+  output:
+    directory: "results/rag_evaluation"
+    save_summary: true
+    save_per_query_retrieval: false
+'''
+
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    print(f"✓ Created RAG evaluation configuration: {target}")
+    print("\nNext steps:")
+    print("1. Edit config_rag.yaml and set your API key")
+    print("2. Prepare your RAG data (JSONL) and qrels (TSV)")
+    print("3. Run: twinkle-eval-judge --rag-config config_rag.yaml")
 
 
 if __name__ == "__main__":
